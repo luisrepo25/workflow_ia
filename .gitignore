@@ -1,1 +1,25 @@
 .env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Database
+db.sqlite3
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
