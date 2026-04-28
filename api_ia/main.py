@@ -3,7 +3,7 @@ import json
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from groq import Groq
 from dotenv import load_dotenv
 
@@ -562,9 +562,20 @@ async def edit_workflow(body: EditWorkflowRequest):
 
     except HTTPException:
         raise
+    except ValidationError as e:
+        print(f"Error de validacion Pydantic al parsear respuesta IA: {e.errors()}")
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "La IA devolvió una estructura JSON que no coincide con los tipos esperados.",
+                "errors": e.errors(),
+            },
+        )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Error en /workflow/editar: {e}")
-        raise HTTPException(status_code=500, detail="Error interno al procesar la edicion de workflow")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 
 class ConsultaRequest(BaseModel):
