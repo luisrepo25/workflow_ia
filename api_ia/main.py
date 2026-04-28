@@ -96,8 +96,8 @@ WorkflowEdge:
 - label: string|null
 
 REGLAS ESTRUCTURALES OBLIGATORIAS (backend):
-1. Debe existir al menos un nodo tipo "inicio".
-2. Debe existir al menos un nodo tipo "fin".
+1. Debe existir al menos un nodo tipo "inicio". Si el workflow original no lo tiene, DEBES crear uno obligatoriamente (puedes usar un id como "n-inicio-auto").
+2. Debe existir al menos un nodo tipo "fin". Si el workflow original no lo tiene, DEBES crear uno obligatoriamente (puedes usar un id como "n-fin-auto").
 3. Si hay nodos, debe haber lanes.
 4. lane.id unico, y cada lane debe tener departmentId.
 5. Un mismo departmentId no puede repetirse en mas de una lane.
@@ -162,7 +162,7 @@ class FormField(BaseModel):
     tipo: Literal["text", "textarea", "number", "date", "bool", "select", "file"]
     required: bool = False
     options: list[str] = Field(default_factory=list)
-    placeholder: str = ""
+    placeholder: str | None = None
 
 
 class NodeForm(BaseModel):
@@ -180,7 +180,7 @@ class WorkflowNode(BaseModel):
     departmentId: str
     responsableTipo: Literal["cliente", "usuario", "departamento"] | None = None
     responsableUsuarioId: str | None = None
-    responsableRole: Literal["Cliente", "Funcionario", "Disenador", "Administrador"] | None = None
+    responsableRole: str | None = None
     slaMinutos: int | None = None
     permiteAdjuntos: bool = False
     form: NodeForm | None = None
@@ -541,12 +541,8 @@ async def edit_workflow(body: EditWorkflowRequest):
 
         if not deletion_requested:
             proposal_workflow = _repair_workflow_proposal(body.currentWorkflow, proposal_workflow)
-            proposal_workflow = _ensure_start_and_end_nodes(body.currentWorkflow, proposal_workflow)
         else:
             proposal_workflow = _complete_missing_required_nodes(body.currentWorkflow, proposal_workflow)
-
-        if body.rules.preserveExistingIds and not deletion_requested:
-            proposal_workflow = _repair_workflow_proposal(body.currentWorkflow, proposal_workflow)
 
         validation_errors = _validate_workflow_structure(proposal_workflow, body.catalogs)
         if body.rules.preserveExistingIds and not deletion_requested:
@@ -588,7 +584,7 @@ async def ai_endpoint(body: ConsultaRequest):
         
         # 2. Llamada optimizada
         completion = client.chat.completions.create(
-            model=os.getenv("MODELO"),
+            model=os.getenv("MODELO", "llama-3.3-70b-versatile"),
             messages=[{"role": "user", "content": body.prompt}],
             temperature=0.7,          # Un poco más bajo suele ser mejor para respuestas coherentes
             max_completion_tokens=1024,
