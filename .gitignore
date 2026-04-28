@@ -16,9 +16,6 @@ env/
 venv/
 ENV/
 
-# Database
-db.sqlite3
-*.db
 
 # OS
 .DS_Store
