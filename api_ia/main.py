@@ -162,7 +162,7 @@ class FormField(BaseModel):
     tipo: Literal["text", "textarea", "number", "date", "bool", "select", "file"]
     required: bool = False
     options: list[str] = Field(default_factory=list)
-    placeholder: str = ""
+    placeholder: str | None = None
 
 
 class NodeForm(BaseModel):
