@@ -6,11 +6,15 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, ValidationError
 from groq import Groq
 from dotenv import load_dotenv
+from local_ia.inference import LocalIA
 
 # 1. Carga automática del .env
 load_dotenv() 
 
 fastapi_app = FastAPI()
+
+# Inicializar IA Local (Cargara modelos bajo demanda)
+local_ia = LocalIA()
 
 SYSTEM_PROMPT = """
 Eres un asistente de edicion de workflows para un sistema BPM.
@@ -534,7 +538,25 @@ def _complete_missing_required_nodes(current: WorkflowModel, proposed: WorkflowM
 @fastapi_app.post("/workflow/editar")
 async def edit_workflow(body: EditWorkflowRequest):
     try:
-        proposal_dict = _call_groq_for_workflow(body)
+        proposal_dict = None
+        
+        # 1. Intentar con IA Local primero
+        try:
+            print("Intentando edicion con IA Local...")
+            proposal_dict = local_ia.generate_workflow(body.model_dump())
+            if proposal_dict:
+                # Validar que el resultado local sea un workflow valido estructuralmente
+                temp_workflow = WorkflowModel.model_validate(proposal_dict)
+                print("IA Local genero una propuesta valida.")
+        except Exception as e:
+            print(f"IA Local fallo o devolvio JSON invalido: {e}")
+            proposal_dict = None
+
+        # 2. Fallback a Groq si la local fallo
+        if not proposal_dict:
+            print("Fallback: Llamando a Groq API...")
+            proposal_dict = _call_groq_for_workflow(body)
+        
         proposal_workflow = WorkflowModel.model_validate(proposal_dict)
 
         deletion_requested = _user_requested_deletions(body.userInstruction)

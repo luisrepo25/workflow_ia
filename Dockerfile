@@ -13,4 +13,4 @@ COPY . .
 
 EXPOSE ${PORT:-8000}
 
-CMD ["sh", "-c", "python manage.py migrate && uvicorn core.asgi:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "python manage.py migrate && python local_ia/trainer.py && uvicorn core.asgi:app --host 0.0.0.0 --port ${PORT:-8000}"]
