@@ -50,10 +50,12 @@ jobs:
       # ── Deploy: pull + docker compose up en EC2 ──
       - run:
           name: Deploy a EC2
+          no_output_timeout: 15m
           command: |
             ssh ${EC2_USER}@${EC2_IP} bash -c "'
               cd ${EC2_PATH} &&
               git pull origin main &&
+              docker system prune -af --volumes &&
               docker compose down &&
               docker compose up -d --build
             '"

@@ -5,9 +5,14 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install dependencies first to improve Docker layer cache.
+# ── Instalar PyTorch CPU (mucho más liviano ~200MB vs ~5GB CUDA) ──
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir \
+      --extra-index-url https://download.pytorch.org/whl/cpu \
+      -r requirements.txt && \
+    pip cache purge && \
+    find /usr/local/lib/python3.12 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null; \
+    rm -rf /root/.cache /tmp/*
 
 COPY . .
 
