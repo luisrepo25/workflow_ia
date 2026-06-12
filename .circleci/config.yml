@@ -63,7 +63,7 @@ jobs:
           name: Deploy a EC2
           no_output_timeout: 10m
           command: |
-            ssh -T ${EC2_USER}@${EC2_IP} << ENDSSH
+            ssh -T ${EC2_USER}@${EC2_IP} \<< ENDSSH
               echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
               cd ${EC2_PATH}
               git pull origin main
