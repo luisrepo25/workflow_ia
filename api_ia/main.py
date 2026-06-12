@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, ValidationError
 from groq import Groq
 from dotenv import load_dotenv
 from local_ia.inference import LocalIA
+from local_ia.recommender import get_recommender, WorkflowRecommender
 
 # 1. Carga automática del .env
 load_dotenv() 
@@ -15,6 +16,15 @@ fastapi_app = FastAPI()
 
 # Inicializar IA Local (Cargara modelos bajo demanda)
 local_ia = LocalIA()
+
+# Inicializar recomendador de trámites (se carga bajo demanda)
+recommender: WorkflowRecommender | None = None
+try:
+    recommender = get_recommender()
+    if recommender:
+        print("✅ Recomendador de trámites disponible")
+except Exception as e:
+    print(f"⚠️ Recomendador no disponible: {e}")
 
 SYSTEM_PROMPT = """
 Eres un asistente de edicion de workflows para un sistema BPM.
@@ -633,3 +643,157 @@ async def ai_endpoint(body: ConsultaRequest):
         # 3. Imprime el error en tu consola para que sepas qué pasó
         print(f"Error en el servidor: {e}")
         raise HTTPException(status_code=500, detail="Error interno al procesar la IA")
+
+
+# ─────────────────────────────────────────────
+# 📋 ENDPOINT DE RECOMENDACIÓN DE TRÁMITES
+# ─────────────────────────────────────────────
+
+
+class RecomendarRequest(BaseModel):
+    """Solicitud de recomendación de trámite."""
+    consulta: str = Field(
+        ...,
+        min_length=3,
+        max_length=500,
+        description="Consulta del usuario en lenguaje natural",
+    )
+    top_k: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Número de resultados a devolver",
+    )
+
+
+class RecomendarResponse(BaseModel):
+    consulta: str
+    recomendaciones: list[dict]
+    total_clases: int
+    modelo: str = "distilbert-base-multilingual-cased"
+
+
+@fastapi_app.post("/recomendar", response_model=RecomendarResponse)
+async def recomendar_tramite(body: RecomendarRequest):
+    """
+    Recomienda el/los trámite(s) más adecuados para la consulta del usuario.
+    Usa el modelo DistilBERT fine-tuneado localmente.
+    """
+    global recommender
+
+    # Intentar inicializar si no está listo
+    if recommender is None:
+        try:
+            recommender = get_recommender()
+        except Exception as e:
+            pass
+
+    if recommender is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "El modelo de recomendación no está disponible. "
+                "Ejecuta primero: python local_ia/train_recommender.py"
+            ),
+        )
+
+    try:
+        resultados = recommender.predict(body.consulta, top_k=body.top_k)
+        return RecomendarResponse(
+            consulta=body.consulta,
+            recomendaciones=resultados,
+            total_clases=recommender.num_classes,
+        )
+    except Exception as e:
+        print(f"Error en /recomendar: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al procesar la recomendación: {str(e)}",
+        )
+
+
+# ─────────────────────────────────────────────
+# 📥 ENDPOINT DE DESCARGA DEL MODELO ONNX
+# ─────────────────────────────────────────────
+
+
+@fastapi_app.get("/modelo/descargar")
+async def descargar_modelo():
+    """
+    Descarga el modelo ONNX para usarlo en la app Flutter.
+    El modelo se puede cargar con onnxruntime en Flutter.
+    """
+    from fastapi.responses import FileResponse
+
+    model_path = "local_ia/models/recommender_int8.onnx"
+
+    if not os.path.exists(model_path):
+        # Fallback al FP32 si no existe el int8
+        model_path = "local_ia/models/recommender.onnx"
+
+    if not os.path.exists(model_path):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Modelo ONNX no encontrado. "
+                "Ejecuta primero: python local_ia/train_recommender.py"
+            ),
+        )
+
+    return FileResponse(
+        path=model_path,
+        media_type="application/octet-stream",
+        filename="recommender_int8.onnx",
+        headers={
+            "Content-Disposition": "attachment; filename=recommender_int8.onnx",
+            "X-Model-Info": json.dumps({
+                "name": "DistilBERT Multilingual - Recomendador de Trámites",
+                "format": "ONNX",
+                "precision": "INT8",
+                "runtime": "onnxruntime",
+                "input": "input_ids (int64), attention_mask (int64)",
+                "output": "logits (float32)",
+                "max_seq_length": 128,
+                "num_classes": recommender.num_classes if recommender else 0,
+                "size_mb": round(os.path.getsize(model_path) / 1024 / 1024, 1) if os.path.exists(model_path) else 0,
+            }),
+        },
+    )
+
+
+@fastapi_app.get("/modelo/info")
+async def info_modelo():
+    """
+    Información del modelo ONNX para la app Flutter.
+    """
+    import glob
+
+    int8_path = "local_ia/models/recommender_int8.onnx"
+    fp32_path = "local_ia/models/recommender.onnx"
+    class_mapping_path = "local_ia/models/class_mapping.json"
+    report_path = "local_ia/models/training_report.json"
+
+    # Elegir el modelo disponible
+    model_path = int8_path if os.path.exists(int8_path) else fp32_path
+
+    info = {
+        "modelo": "distilbert-base-multilingual-cased",
+        "formato": "ONNX",
+        "precision": "INT8" if os.path.exists(int8_path) else "FP32",
+        "disponible": os.path.exists(model_path),
+        "tamano_bytes": os.path.getsize(model_path) if os.path.exists(model_path) else 0,
+        "tamano_mb": round(os.path.getsize(model_path) / 1024 / 1024, 2) if os.path.exists(model_path) else 0,
+        "tamano_recomendado_mb": 130,
+        "tamano_fp32_mb": 517,
+        "tamano_fp16_mb": 259,
+    }
+
+    if os.path.exists(report_path):
+        with open(report_path, "r", encoding="utf-8") as f:
+            info["entrenamiento"] = json.load(f)
+
+    if os.path.exists(class_mapping_path):
+        with open(class_mapping_path, "r", encoding="utf-8") as f:
+            info["clases"] = json.load(f)
+
+    return info

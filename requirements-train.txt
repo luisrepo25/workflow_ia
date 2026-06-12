@@ -1,6 +1,13 @@
 # ═══════════════════════════════════════
-# Dependencias COMPLETAS (runtime + training)
-# Para instalar solo runtime usa: requirements-runtime.txt
+# Dependencias de ENTRENAMIENTO
+# Incluye todo lo de runtime + extras de training
 # ═══════════════════════════════════════
 
--r requirements-train.txt
+-r requirements-runtime.txt
+
+# ── Training extras ──
+datasets>=2.0.0
+accelerate>=0.20.0
+onnx>=1.14.0
+onnxscript>=0.7.0
+protobuf>=3.20.0

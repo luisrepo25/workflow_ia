@@ -15,8 +15,12 @@ __pycache__/
 env/
 venv/
 ENV/
-
+docker-compose.override.yml
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Modelos generados por entrenamiento
+local_ia/models/
+local_ia/index/embeddings.npy

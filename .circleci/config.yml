@@ -1,37 +1,48 @@
 version: 2.1
 
 jobs:
-  build-and-test:
+  # ──── JOB 1: Build + Push a Docker Hub ────
+  #   Compila la imagen COMPLETA (incluye entrenamiento de modelos)
+  #   y la sube al registro. El entrenamiento corre ACÁ (CI potente),
+  #   NO en EC2.
+  # ────────────────────────────────────────────────────────────
+  build-and-push:
     docker:
       - image: cimg/python:3.12
     steps:
       - checkout
-
       - setup_remote_docker:
           version: default
 
-      # ── Instalar dependencias ──
-      - run:
-          name: Instalar dependencias Python
-          command: |
-            python -m venv venv
-            . venv/bin/activate
-            pip install --upgrade pip
-            pip install -r requirements.txt
-
-      # ── Build de la imagen Docker ──
+      # Build de la imagen (multi-stage → incluye training en stage "trainer")
       - run:
           name: Build Docker image
-          command: docker build -t workflow_ia:latest .
-
-      # ── Tests con Django (check + migrate seco) ──
-      - run:
-          name: Django system checks & migrate dry-run
           command: |
-            . venv/bin/activate
-            python manage.py check
-            python manage.py migrate --run-syncdb --check
+            docker build \
+              -t workflow_ia:${CIRCLE_SHA1} \
+              -t workflow_ia:latest \
+              .
 
+      # Login a Docker Hub (requiere DOCKER_USER y DOCKER_PASS en CircleCI)
+      - run:
+          name: Login a Docker Hub
+          command: echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+
+      # Pushear con tag del commit + latest
+      - run:
+          name: Push image to Docker Hub
+          command: |
+            docker tag workflow_ia:${CIRCLE_SHA1} \
+              ${DOCKER_USER}/workflow_ia:${CIRCLE_SHA1}
+            docker tag workflow_ia:latest \
+              ${DOCKER_USER}/workflow_ia:latest
+            docker push ${DOCKER_USER}/workflow_ia:${CIRCLE_SHA1}
+            docker push ${DOCKER_USER}/workflow_ia:latest
+
+  # ──── JOB 2: Deploy a EC2 ────
+  #   Solo hace pull de la imagen ya compilada y la ejecuta.
+  #   NUNCA entrena ni construye en EC2.
+  # ────────────────────────────────────────────────────────────
   deploy:
     docker:
       - image: cimg/base:current
@@ -47,29 +58,30 @@ jobs:
           name: Agregar EC2 a known_hosts
           command: ssh-keyscan -H $EC2_IP >> ~/.ssh/known_hosts
 
-      # ── Deploy: pull + docker compose up en EC2 ──
+      # ── Deploy: pull + docker compose up (SIN build) ──
       - run:
           name: Deploy a EC2
-          no_output_timeout: 15m
+          no_output_timeout: 10m
           command: |
-            ssh ${EC2_USER}@${EC2_IP} bash -c "'
-              cd ${EC2_PATH} &&
-              git pull origin main &&
-              docker system prune -af --volumes &&
-              docker compose down &&
-              docker compose up -d --build
-            '"
+            ssh -T ${EC2_USER}@${EC2_IP} << ENDSSH
+              echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
+              cd ${EC2_PATH}
+              git pull origin main
+              docker compose pull
+              docker system prune -af --volumes
+              docker compose up -d --no-build
+            ENDSSH
 
 workflows:
-  build-test-deploy:
+  build-push-deploy:
     jobs:
-      - build-and-test:
+      - build-and-push:
           filters:
             branches:
               only: main
       - deploy:
           requires:
-            - build-and-test
+            - build-and-push
           filters:
             branches:
               only: main

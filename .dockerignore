@@ -1,10 +1,39 @@
-venv/
+# ── Python ──
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.sqlite3
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# ── Git ──
 .git/
 .gitignore
+.gitattributes
+
+# ── IDE / OS ──
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Entorno y datos locales ──
 .env
 *.log
+db.sqlite3
+
+# ── TODO esto se genera DURANTE el build (stage trainer) ──
+#    No necesita estar en el build context
+local_ia/models/
+local_ia/index/
+
+# ── Notebooks ──
+*.ipynb

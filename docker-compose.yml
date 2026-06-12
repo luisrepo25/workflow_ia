@@ -1,13 +1,15 @@
-version: "3.9"
 
 services:
   web:
-    build: .
+    build:
+      context: .
+      target: runtime
+    # ── Imagen en registry (Docker Hub / ECR) ──
+    #    En CI/CD se pushea aquí; en EC2 se hace pull.
+    #    Localmente se ignora (usa build local).
+    image: "${DOCKER_REGISTRY:-docker.io}/${DOCKER_USER:-workflow_ia}/workflow_ia:${IMAGE_TAG:-latest}"
     container_name: workflow_ia_web
     env_file:
       - .env
     ports:
       - "${PORT:-8000}:${PORT:-8000}"
-    volumes:
-      - .:/app
-    command: sh -c "python manage.py migrate && python local_ia/trainer.py && uvicorn core.asgi:app --host 0.0.0.0 --port ${PORT:-8000}"
